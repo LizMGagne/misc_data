@@ -74,8 +74,10 @@ lemmas = []
 pos = []
 tag = []
 dep = []
+texts = []
 
 for doc in nlp.pipe(data_en['text'].values, batch_size=100, n_threads=3):
+    texts.append(doc.text)
     if doc.is_parsed:
         tokens.append([n.text for n in doc if not n.is_punct and not n.is_stop and not n.is_space and not n.like_url and not n.like_num])
         lemmas.append([n.lemma_ for n in doc if not n.is_punct and not n.is_stop and not n.is_space and not n.like_url and not n.like_num])
@@ -304,19 +306,19 @@ df_topic_sents_keywords = format_topics_sentences(ldamodel=ldamodel, corpus=doc_
 
 print(df_topic_sents_keywords.head())
 
+text_series = pd.Series(texts, dtype=str)
+
+df_topic_sents_keywords = pd.concat([df_topic_sents_keywords, text_series], axis=1)
+
 # Format
 df_dominant_topic = df_topic_sents_keywords.reset_index()
-df_dominant_topic.columns = ['Document_No', 'Dominant_Topic', 'Topic_Perc_Contribution', 'Keywords', 'Text']
+df_dominant_topic.columns = ['Document_No', 'Dominant_Topic', 'Topic_Perc_Contribution', 'Keywords', 'Text', 'Text_']
 
-# Print the first 5 rows
-print(df_dominant_topic.head())
-
-print(data_en.head())
-
-#data_en['text'] = data_en['text'].astype(int)
+data_en['text'] = data_en['text'].astype(str)
 df_dominant_topic['Document_No'] = df_dominant_topic['Document_No'].astype(int)
-#results = pd.concat([[data_en, df_dominant_topic], join="inner")
-results = pd.concat([data_en, df_dominant_topic], ignore_index=False)
+
+results = pd.merge(data_en, df_dominant_topic, left_on="text", right_on="Text_")
+
 results.to_csv('/home/maviewer/LDA/results.csv')
 print(results.head(10))
 print(results.columns)
