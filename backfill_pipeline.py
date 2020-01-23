@@ -14,6 +14,7 @@ install('langdetect')
 install('spacy')
 install('gensim')
 install('matplotlib')
+install('tqdm')
 
 import pymongo
 import numpy as np
@@ -143,38 +144,44 @@ Returns:
 model_list : List of LDA topic models
 coherence_values : Coherence values corresponding to the LDA model with respective number of topics
 """
+mallet_path = None
+
+if not mallet_path:
+    print("Set 'mallet_path' to path of mallet executable")
+
+
 def get_coherence(dictionary, corpus, texts, limit, start=2, step=3):
     coherence_values = []
     model_list = []
     for num_topics in range(start, limit, step):
         model = Lda(doc_term_matrix, random_state = 100, update_every=3, chunksize = 50, id2word = dictionary, alpha='auto')
-        #gensim.models.wrappers.LdaMallet(mallet_path, corpus=corpus, num_topics=num_topics, id2word=id2word)
+        gensim.models.wrappers.LdaMallet(mallet_path, corpus=corpus, num_topics=num_topics, id2word=dictionary)
         model_list.append(model)
         coherencemodel = CoherenceModel(model=model, texts=lemmas, dictionary=dictionary, coherence='c_v')
         coherence_values.append(coherencemodel.get_coherence())
     return model_list, coherence_values
 
 #Take a 20 percent sample of lemmas
-#import random
-#twentyperc = ((len(lemmas))/5)
-#lemma_samp = random.sample(lemmas, twentyperc)
+import random
+twentyperc = len(lemmas) // 5
+lemma_samp = random.sample(lemmas, twentyperc)
 
 # Can take a long time to run.
-#model_list, coherence_values = get_coherence(dictionary=dictionary, corpus=doc_term_matrix, texts=lemmas, start=8, limit=40, step=4)
-#print(model_list, coherence_values)
+model_list, coherence_values = get_coherence(dictionary=dictionary, corpus=doc_term_matrix, texts=lemmas, start=8, limit=40, step=4)
+print(model_list, coherence_values)
 # Show graph
-#import matplotlib.pyplot as plt
-#limit=40; start=8; step=4;
-#x = range(start, limit, step)
-#plt.plot(x, coherence_values)
-#plt.xlabel("Num Topics")
-#plt.ylabel("Coherence score")
-#plt.legend(("coherence_values"), loc='best')
-#plt.show()
+import matplotlib.pyplot as plt
+limit=40; start=8; step=4
+x = range(start, limit, step)
+plt.plot(x, coherence_values)
+plt.xlabel("Num Topics")
+plt.ylabel("Coherence score")
+plt.legend(("coherence_values"), loc='best')
+plt.show()
 
 #--------------------
 # try another way to optimize
-'''
+
 def compute_coherence_values(corpus, dictionary, k, a, b):
     lda_model = gensim.models.LdaMulticore(corpus=corpus,
                                            num_topics=10, 
@@ -184,7 +191,7 @@ def compute_coherence_values(corpus, dictionary, k, a, b):
                                            alpha=a,
                                            eta=b,
                                            per_word_topics=True)
-    coherence_model_lda = CoherenceModel(model=lda_model, texts=lemmas, corpus=doc_term_matrix, dictionary=Dictionary, coherence='c_v')
+    coherence_model_lda = CoherenceModel(model=lda_model, texts=lemmas, corpus=corpus, dictionary=dictionary, coherence='c_v')
     return coherence_model_lda.get_coherence()
 
 
@@ -205,11 +212,9 @@ beta = list(np.arange(0.01, 1, 0.3))
 beta.append('symmetric')
 # Validation sets
 num_of_docs = len(doc_term_matrix)
-corpus_sets = [# gensim.utils.ClippedCorpus(corpus, num_of_docs*0.25), 
-               # gensim.utils.ClippedCorpus(corpus, num_of_docs*0.5), 
-               gensim.utils.ClippedCorpus(doc_term_matrix, num_of_docs*0.75), 
-               doc_term_matrix]
-corpus_title = ['75% Corpus', '100% Corpus']
+corpus_sets = [gensim.utils.ClippedCorpus(doc_term_matrix, int(num_of_docs*0.25)),
+               gensim.utils.ClippedCorpus(doc_term_matrix, int(num_of_docs*0.75))]
+corpus_title = ['25% Corpus', '75% Corpus']
 model_results = {'Validation_Set': [],
                  'Topics': [],
                  'Alpha': [],
@@ -240,8 +245,6 @@ if 1 == 1:
                     pbar.update(1)
     pd.DataFrame(model_results).to_csv('/home/maviewer/LDA/lda_tuning_results.csv', index=False)
     pbar.close()
-
-'''
 
 """
 Coherence measures the relative distance between words within a topic. 
@@ -275,7 +278,6 @@ for what is known as the elbow method - it gives you a graph of the optimal numb
 greatest coherence in your data set. I'm using mallet which has pretty good coherance here is code to check 
 coherence for different numbers of topics:
 """
-
 
 #----------- aggregate by cluster and group
 ## assign docs to topics, get topic perc, etc
@@ -320,10 +322,11 @@ df_dominant_topic['Document_No'] = df_dominant_topic['Document_No'].astype(int)
 results = pd.merge(data_en, df_dominant_topic, left_on="text", right_on="Text_")
 
 results.to_csv('/home/maviewer/LDA/results.csv')
+
 print(results.head(10))
 print(results.columns)
 
-'''
+
 # Group top 5 sentences under each topic
 sent_topics_sorteddf_mallet = pd.DataFrame()
 
@@ -338,7 +341,7 @@ for i, grp in sent_topics_outdf_grpd:
 sent_topics_sorteddf_mallet.reset_index(drop=True, inplace=True)
 
 # Format
-sent_topics_sorteddf_mallet.columns = ['Topic_Num', "Topic_Perc_Contribution", "Keywords", "Text"]
+sent_topics_sorteddf_mallet.columns = ['Topic_Num', "Topic_Perc_Contribution", "Keywords", "Text", "Text_"]
 
 # Print top 5 rows
 sent_topics_sorteddf_mallet.head()
@@ -363,9 +366,9 @@ df_dominant_topics.columns = ['Dominant_Topic', 'Topic_Keywords', 'Num_Documents
 print(df_dominant_topics.head())
 
 ## analyze new text
-tokens = word_tokenize(document)
-topics = lda_model.show_topics(formatted=True, num_topics=num_topics, num_words=20)
-pd.DataFrame([(el[0], round(el[1],2), topics[el[0]][1]) for el in lda_model[dictionary_LDA.doc2bow(tokens)]], columns=['topic #', 'weight', 'words in topic'])
+# tokens = word_tokenize(document)
+# topics = lda_model.show_topics(formatted=True, num_topics=num_topics, num_words=20)
+# pd.DataFrame([(el[0], round(el[1],2), topics[el[0]][1]) for el in lda_model[dictionary_LDA.doc2bow(tokens)]], columns=['topic #', 'weight', 'words in topic'])
 
 ###------------------------------------- Multicore for faster processing
 #lda_mc = gensim.models.LdaMulticore(lemmas, num_topics=3, random_state = 100, chunksize = 50, id2word = dictionary, passes=5, workers=4, iterations = 5);
@@ -377,4 +380,3 @@ print("--- %s seconds ---" % (time() - start_time))
 # --- 435.21546936035156 seconds for 10 topics ---
 # --- 649.3230454921722 seconds for 20 topics ---
 # --- 1132.47567152977 seconds for 40 topics---
-'''
